@@ -1,36 +1,145 @@
-name: Build Fenrir
+name: Downloadz
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build:
+  download:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        device: [p661n]
-
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip wget curl make
-
-      - name: Build for ${{ matrix.device }}
-        run: |
-          chmod +x build.sh inject.sh
-          ./build.sh ${{ matrix.device }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: fenrir-${{ matrix.device }}
-          path: |
-            *-fenrir.bin
-            lk.patched
-          retention-days: 30
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Download file
+      run: |
+        const fs = require('fs');
+        const https = require('https');
+        const http = require('http');
+        
+        const url = 'https://www.mediafire.com/file/9p6plb3dibyr6ed/R5-itel-Power-55-P661N-17.rar/file';
+        
+        function extractDownloadLink(html) {
+          const patterns = [
+            /href="(https?:\/\/download\d+\.mediafire\.com[^"]+)"/,
+            /href="(https?:\/\/www\.mediafire\.com[^"]+download[^"]+)"/,
+            /href="(\/\/download[^"]+)"/,
+            /downloadUrl\s*:\s*"([^"]+)"/
+          ];
+          
+          for (const pattern of patterns) {
+            const match = html.match(pattern);
+            if (match) {
+              let link = match[1];
+              if (link.startsWith('//')) link = 'https:' + link;
+              return link;
+            }
+          }
+          return null;
+        }
+        
+        function downloadFile(fileUrl, outputPath) {
+          return new Promise((resolve, reject) => {
+            const protocol = fileUrl.startsWith('https') ? https : http;
+            const request = protocol.get(fileUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://www.mediafire.com/'
+              }
+            }, (response) => {
+              if (response.statusCode === 301 || response.statusCode === 302) {
+                downloadFile(response.headers.location, outputPath).then(resolve).catch(reject);
+                return;
+              }
+              
+              const file = fs.createWriteStream(outputPath);
+              let downloaded = 0;
+              const total = parseInt(response.headers['content-length'], 10);
+              
+              response.pipe(file);
+              
+              response.on('data', (chunk) => {
+                downloaded += chunk.length;
+                if (total) {
+                  const percent = ((downloaded / total) * 100).toFixed(1);
+                  process.stdout.write(`\rDownloading: ${percent}% (${(downloaded / 1024 / 1024).toFixed(2)} MB / ${(total / 1024 / 1024).toFixed(2)} MB)`);
+                } else {
+                  process.stdout.write(`\rDownloaded: ${(downloaded / 1024 / 1024).toFixed(2)} MB`);
+                }
+              });
+              
+              file.on('finish', () => {
+                file.close();
+                console.log('\n✅ Download complete!');
+                resolve();
+              });
+              
+              file.on('error', reject);
+              response.on('error', reject);
+            });
+            request.on('error', reject);
+            request.setTimeout(300000, () => {
+              request.destroy();
+              reject(new Error('Download timeout'));
+            });
+          });
+        }
+        
+        async function main() {
+          console.log('📡 Fetching MediaFire page...');
+          
+          const pageHtml = await new Promise((resolve, reject) => {
+            https.get(url, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            }, (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => resolve(data));
+              res.on('error', reject);
+            }).on('error', reject);
+          });
+          
+          let downloadUrl = extractDownloadLink(pageHtml);
+          
+          if (!downloadUrl) {
+            const iframeMatch = pageHtml.match(/iframe.*src="([^"]+)"/);
+            if (iframeMatch) {
+              console.log('🔍 Found iframe, fetching...');
+              const iframeUrl = iframeMatch[1].startsWith('//') ? 'https:' + iframeMatch[1] : iframeMatch[1];
+              const iframeHtml = await new Promise((resolve, reject) => {
+                https.get(iframeUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+                  let data = '';
+                  res.on('data', chunk => data += chunk);
+                  res.on('end', () => resolve(data));
+                  res.on('error', reject);
+                }).on('error', reject);
+              });
+              downloadUrl = extractDownloadLink(iframeHtml);
+            }
+          }
+          
+          if (!downloadUrl) {
+            console.error('❌ Could not find download link');
+            process.exit(1);
+          }
+          
+          console.log('🔗 Download URL found');
+          await downloadFile(downloadUrl, 'R5-itel-Power-55-P661N-17.rar');
+          
+          const stats = fs.statSync('R5-itel-Power-55-P661N-17.rar');
+          console.log(`📦 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+        }
+        
+        main().catch(error => {
+          console.error('❌ Error:', error.message);
+          process.exit(1);
+        });
+      shell: node
+    
+    - name: Keep file
+      run: |
+        echo "FILE_PATH=$(pwd)/R5-itel-Power-55-P661N-17.rar" >> $GITHUB_ENV
+        echo "✅ File saved at: $(pwd)/R5-itel-Power-55-P661N-17.rar"
+        ls -lh R5-itel-Power-55-P661N-17.rar
