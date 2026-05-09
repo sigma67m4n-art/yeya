@@ -1,0 +1,36 @@
+name: Build Fenrir
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        device: [p661n]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip wget curl make
+
+      - name: Build for ${{ matrix.device }}
+        run: |
+          chmod +x build.sh inject.sh
+          ./build.sh ${{ matrix.device }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fenrir-${{ matrix.device }}
+          path: |
+            *-fenrir.bin
+            lk.patched
+          retention-days: 30
