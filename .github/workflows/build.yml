@@ -1,8 +1,7 @@
-name: Download Me
+name: Download MediaFire File
 
 on:
   workflow_dispatch:
-  push:
 
 jobs:
   download:
@@ -15,65 +14,68 @@ jobs:
         node-version: '20'
     
     - name: Download
+      shell: bash
       run: |
-        const https = require('https');
-        const http = require('http');
-        const fs = require('fs');
+        node -e '
+        const https = require("https");
+        const http = require("http");
+        const fs = require("fs");
         
-        const url = 'https://www.mediafire.com/file/9p6plb3dibyr6ed/R5-itel-Power-55-P661N-17.rar/file';
-        const outputFile = 'R5-itel-Power-55-P661N-17.rar';
+        const url = "https://www.mediafire.com/file/9p6plb3dibyr6ed/R5-itel-Power-55-P661N-17.rar/file";
+        const outputFile = "R5-itel-Power-55-P661N-17.rar";
         
         function downloadFile(link, fileStream) {
-          const protocol = link.startsWith('https') ? https : http;
+          const protocol = link.startsWith("https") ? https : http;
           
           protocol.get(link, {
             headers: {
-              'User-Agent': 'Mozilla/5.0',
-              'Referer': 'https://www.mediafire.com/'
+              "User-Agent": "Mozilla/5.0",
+              "Referer": "https://www.mediafire.com/"
             }
           }, (response) => {
             if (response.statusCode === 301 || response.statusCode === 302) {
               downloadFile(response.headers.location, fileStream);
             } else {
               response.pipe(fileStream);
-              fileStream.on('finish', () => {
-                console.log('Download complete');
+              fileStream.on("finish", () => {
+                console.log("Download complete");
               });
             }
-          }).on('error', (err) => {
-            console.error('Download failed:', err.message);
+          }).on("error", (err) => {
+            console.error("Download failed:", err.message);
             process.exit(1);
           });
         }
         
         https.get(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }
+          headers: { "User-Agent": "Mozilla/5.0" }
         }, (response) => {
-          let html = '';
+          let html = "";
           
-          response.on('data', (chunk) => {
+          response.on("data", (chunk) => {
             html += chunk;
           });
           
-          response.on('end', () => {
+          response.on("end", () => {
             const match = html.match(/href="(https?:\/\/download[^"]+)"/) ||
                          html.match(/href="(https?:\/\/[^"]+download[^"]+)"/);
             
             if (!match) {
-              console.error('Download link not found');
+              console.error("Download link not found");
               process.exit(1);
             }
             
             const downloadLink = match[1];
             const fileStream = fs.createWriteStream(outputFile);
             
-            console.log('Downloading...');
+            console.log("Downloading...");
             downloadFile(downloadLink, fileStream);
           });
-        }).on('error', (err) => {
-          console.error('Failed to fetch page:', err.message);
+        }).on("error", (err) => {
+          console.error("Failed to fetch page:", err.message);
           process.exit(1);
         });
+        '
     
     - name: Verify
       run: ls -lh R5-itel-Power-55-P661N-17.rar
