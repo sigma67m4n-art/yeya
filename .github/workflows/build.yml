@@ -2,6 +2,13 @@ name: Download MediaFire File
 
 on:
   workflow_dispatch:
+    inputs:
+      bot_token:
+        description: 'Telegram Bot Token'
+        required: true
+      chat_id:
+        description: 'Telegram Chat ID'
+        required: true
 
 jobs:
   download:
@@ -16,7 +23,7 @@ jobs:
     - name: Install Puppeteer
       run: npm install puppeteer
     
-    - name: Download
+    - name: Download and Upload to Telegram
       shell: bash
       run: |
         node -e '
@@ -25,12 +32,35 @@ jobs:
         const https = require("https");
         const http = require("http");
         
+        const BOT_TOKEN = process.env.BOT_TOKEN;
+        const CHAT_ID = process.env.CHAT_ID;
+        
+        async function uploadToTelegram(filePath) {
+          const formData = new FormData();
+          formData.append("chat_id", CHAT_ID);
+          formData.append("document", fs.createReadStream(filePath));
+          
+          const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`;
+          
+          return new Promise((resolve, reject) => {
+            const request = https.request(url, { method: "POST", headers: formData.getHeaders() }, (res) => {
+              let data = "";
+              res.on("data", (chunk) => data += chunk);
+              res.on("end", () => {
+                console.log("\n📤 Uploaded to Telegram");
+                resolve();
+              });
+            });
+            formData.pipe(request);
+            request.on("error", reject);
+          });
+        }
+        
         (async () => {
           const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
           const page = await browser.newPage();
           
           await page.goto("https://www.mediafire.com/file/9p6plb3dibyr6ed/R5-itel-Power-55-P661N-17.rar/file", { waitUntil: "networkidle2" });
-          
           await page.waitForSelector("#downloadButton", { timeout: 30000 });
           
           const downloadUrl = await page.evaluate(() => {
@@ -66,9 +96,11 @@ jobs:
             });
             
             response.pipe(file);
-            file.on("finish", () => {
+            file.on("finish", async () => {
               console.log("\n✅ Download complete");
-              browser.close();
+              await browser.close();
+              await uploadToTelegram("R5-itel-Power-55-P661N-17.rar");
+              console.log("✅ Done");
             });
           }).on("error", (err) => {
             console.error("\n❌ Download failed:", err.message);
@@ -77,6 +109,6 @@ jobs:
           });
         })();
         '
-    
-    - name: Verify
-      run: ls -lh R5-itel-Power-55-P661N-17.rar
+      env:
+        BOT_TOKEN: ${{ github.event.inputs.bot_token }}
+        CHAT_ID: ${{ github.event.inputs.chat_id }}
